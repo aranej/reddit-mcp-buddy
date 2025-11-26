@@ -27,12 +27,52 @@ export class RedditAPI {
   private timeout: number;
   private baseUrl = 'https://www.reddit.com';
   private oauthUrl = 'https://oauth.reddit.com';
+  
+  // ENHANCED: Random delay settings to prevent rate limit errors
+  private minDelay: number;
+  private maxDelay: number;
+  private enableDelay: boolean;
+  private lastRequestTime: number = 0;
 
   constructor(options: RedditAPIOptions) {
     this.auth = options.authManager;
     this.rateLimiter = options.rateLimiter;
     this.cache = options.cacheManager;
     this.timeout = options.timeout ?? 10000; // Increased timeout to 10 seconds
+    
+    // ENHANCED: Configure delay from environment or use defaults
+    // Set REDDIT_DELAY_MIN and REDDIT_DELAY_MAX in ms, or REDDIT_NO_DELAY=true to disable
+    this.enableDelay = process.env.REDDIT_NO_DELAY !== 'true';
+    this.minDelay = parseInt(process.env.REDDIT_DELAY_MIN || '2000', 10); // Default 2s
+    this.maxDelay = parseInt(process.env.REDDIT_DELAY_MAX || '4000', 10); // Default 4s
+    
+    if (this.enableDelay) {
+      console.error(`🕐 Request delay enabled: ${this.minDelay}-${this.maxDelay}ms between requests`);
+    }
+  }
+
+  /**
+   * ENHANCED: Random delay between requests to prevent rate limiting
+   * Reddit API detects rapid bursts and blocks with "private/quarantined" errors
+   */
+  private async randomDelay(): Promise<void> {
+    if (!this.enableDelay) return;
+    
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    
+    // Only delay if last request was recent
+    if (this.lastRequestTime > 0 && timeSinceLastRequest < this.maxDelay) {
+      const delay = this.minDelay + Math.random() * (this.maxDelay - this.minDelay);
+      const actualDelay = Math.max(0, delay - timeSinceLastRequest);
+      
+      if (actualDelay > 0) {
+        console.error(`⏳ Waiting ${Math.round(actualDelay)}ms before next request...`);
+        await new Promise(resolve => setTimeout(resolve, actualDelay));
+      }
+    }
+    
+    this.lastRequestTime = Date.now();
   }
 
   /**
@@ -325,6 +365,7 @@ export class RedditAPI {
 
   /**
    * Private: Make GET request to Reddit API with retry logic
+   * ENHANCED: Added random delay between requests to prevent rate limiting
    */
   private async get<T>(endpoint: string, retries: number = 2): Promise<T> {
     // Check rate limit
@@ -332,6 +373,9 @@ export class RedditAPI {
       const isAuth = this.auth.isAuthenticated();
       throw new Error(this.rateLimiter.getErrorMessage(isAuth));
     }
+
+    // ENHANCED: Apply random delay before request to prevent burst detection
+    await this.randomDelay();
 
     // Get headers (includes auth if available)
     let headers = await this.auth.getHeaders();
