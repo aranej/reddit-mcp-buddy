@@ -36,6 +36,11 @@ export const getPostDetailsSchema = z.object({
   comment_depth: z.number().min(1).max(10).optional().default(3).describe('Default 3, range (1-10). Override ONLY IF user specifies.'),
   extract_links: z.boolean().optional().default(false),
   max_top_comments: z.number().min(1).max(20).optional().default(5).describe('Default 5, range (1-20). Change ONLY IF user requests.'),
+  // ENHANCED: Full content support for power users
+  include_full_content: z.boolean().optional().default(false)
+    .describe('Return complete post text without truncation. Default false (1000 char limit). Set true for full post content when you need to read entire posts.'),
+  comment_body_max_length: z.number().min(100).max(5000).optional().default(500)
+    .describe('Max characters for comment bodies. Default 500, range (100-5000). Increase for detailed comment analysis.'),
 });
 
 export const userAnalysisSchema = z.object({
@@ -228,6 +233,13 @@ export class RedditTools {
 
     const post = postListing.data.children[0].data;
 
+    // ENHANCED: Conditional content truncation based on include_full_content parameter
+    // Default behavior (include_full_content=false): truncate to 1000 chars for LLM context protection
+    // Power user mode (include_full_content=true): return complete post text
+    const contentText = params.include_full_content
+      ? post.selftext
+      : post.selftext?.substring(0, 1000);
+
     // Extract essential post fields
     const cleanPost = {
       id: post.id,
@@ -242,7 +254,7 @@ export class RedditTools {
       subreddit: post.subreddit,
       is_video: post.is_video,
       is_text_post: post.is_self,
-      content: post.selftext?.substring(0, 1000), // More text for post details
+      content: contentText,
       nsfw: post.over_18,
       link_flair_text: post.link_flair_text,
       stickied: post.stickied,
@@ -254,6 +266,10 @@ export class RedditTools {
       .filter(child => child.kind === 't1') // Only comments
       .map(child => child.data);
 
+    // ENHANCED: Use configurable comment body length
+    // Default 500 chars, power users can increase up to 5000 for detailed analysis
+    const commentBodyLimit = params.comment_body_max_length || 500;
+
     let result: any = {
       post: cleanPost,
       total_comments: comments.length,
@@ -261,7 +277,7 @@ export class RedditTools {
         id: c.id,
         author: c.author,
         score: c.score,
-        body: (c.body || '').substring(0, 500),
+        body: (c.body || '').substring(0, commentBodyLimit),
         created_utc: c.created_utc,
         depth: c.depth,
         is_op: c.is_submitter,
