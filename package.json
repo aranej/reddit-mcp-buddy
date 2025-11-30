@@ -1,7 +1,7 @@
 {
   "name": "reddit-mcp-buddy-enhanced",
-  "version": "1.2.0",
-  "description": "Enhanced fork of reddit-mcp-buddy with zombie process fixes. Clean, LLM-optimized Reddit MCP server. Browse posts, search content, analyze users.",
+  "version": "1.3.0",
+  "description": "Enhanced fork of reddit-mcp-buddy with zombie process fixes, rate limit protection, and power user features. Clean, LLM-optimized Reddit MCP server with full content mode.",
   "main": "dist/index.js",
   "mcpName": "io.github.aranej/reddit-mcp-buddy-enhanced",
   "bin": {
@@ -35,7 +35,9 @@
     "assistant",
     "model-context-protocol",
     "enhanced",
-    "stable"
+    "stable",
+    "full-content",
+    "power-user"
   ],
   "author": "aranej <slofo22@gmail.com>",
   "contributors": [
