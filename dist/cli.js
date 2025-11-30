@@ -31,12 +31,15 @@ async function setupAuth() {
         output: process.stdout,
     });
     try {
+        // Collect all credentials
         const clientId = await rl.question('Enter your Client ID: ');
+        // Validate Client ID format
         if (!/^[A-Za-z0-9_-]{10,30}$/.test(clientId)) {
             console.error('\n❌ Invalid Client ID format. Should be 10-30 characters, alphanumeric.');
             process.exit(1);
         }
         const clientSecret = await rl.question('Enter your Client Secret: ');
+        // Validate Client Secret
         if (!clientSecret || clientSecret.length < 20) {
             console.error('\n❌ Invalid Client Secret. Please check your Reddit app settings.');
             process.exit(1);
@@ -46,8 +49,10 @@ async function setupAuth() {
         const username = await rl.question('Reddit Username (optional): ');
         let password = '';
         if (username) {
+            // Hide password input
             const passwordQuestion = 'Reddit Password: ';
             process.stdout.write(passwordQuestion);
+            // Disable echo for password
             process.stdin.setRawMode(true);
             process.stdin.resume();
             password = await new Promise((resolve) => {
@@ -80,6 +85,7 @@ async function setupAuth() {
                 });
             });
         }
+        // Test the credentials
         console.log('\n🔄 Testing authentication...');
         const authManager = new AuthManager();
         const config = {
@@ -89,8 +95,10 @@ async function setupAuth() {
             password: password || undefined,
             userAgent: 'RedditBuddy/1.0 (by /u/karanb192)'
         };
+        // Set password temporarily for token retrieval
         authManager['config'] = config;
         try {
+            // Get access token to verify credentials
             await authManager.refreshAccessToken();
             console.log('✅ Success! Authentication configured.');
             if (username && password) {
@@ -111,6 +119,7 @@ async function setupAuth() {
                 console.error('  • Username and password are correct');
             }
             console.error('\nError:', error.message);
+            // Clear invalid config
             await authManager.clear();
             process.exit(1);
         }
@@ -120,8 +129,10 @@ async function setupAuth() {
     }
 }
 async function startServer() {
+    // Check if running in development
     const isDev = process.env.NODE_ENV === 'development';
     if (isDev) {
+        // Development mode - run TypeScript directly
         const serverPath = join(__dirname, 'index.ts');
         const child = spawn('tsx', [serverPath], {
             stdio: 'inherit',
@@ -136,7 +147,9 @@ async function startServer() {
         });
     }
     else {
+        // Production mode - run compiled JavaScript
         const serverPath = join(__dirname, 'index.js');
+        // Dynamic import to run the server
         try {
             await import(serverPath);
         }
@@ -146,8 +159,10 @@ async function startServer() {
         }
     }
 }
+// Parse command line arguments
 const args = process.argv.slice(2);
 if (args.includes('--auth') || args.includes('-a')) {
+    // Run authentication setup
     setupAuth().catch((error) => {
         console.error('Setup failed:', error);
         process.exit(1);
@@ -171,6 +186,7 @@ else if (args.includes('--version') || args.includes('-v')) {
     console.log(`Reddit MCP Buddy v${SERVER_VERSION}`);
 }
 else {
+    // Start the server
     startServer().catch((error) => {
         console.error('Failed to start:', error);
         process.exit(1);
