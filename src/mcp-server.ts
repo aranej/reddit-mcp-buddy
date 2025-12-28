@@ -28,7 +28,7 @@ import {
 
 // Server metadata
 export const SERVER_NAME = 'reddit-mcp-buddy';
-export const SERVER_VERSION = '1.1.10';
+export const SERVER_VERSION = '1.3.1';
 
 /**
  * Create MCP server with proper protocol implementation
@@ -37,6 +37,19 @@ export async function createMCPServer() {
   // Initialize core components
   const authManager = new AuthManager();
   await authManager.load();
+
+  // ENHANCED v1.3.1: Warmup OAuth token at startup to prevent cold start errors
+  // Without this, the first request after server start may fail with "Cannot access r/..."
+  // because the OAuth token is being fetched during the first request (race condition)
+  if (authManager.isAuthenticated()) {
+    try {
+      console.error('🔄 Warming up OAuth token...');
+      await authManager.getAccessToken();
+      console.error('✅ OAuth token ready');
+    } catch (error) {
+      console.error('⚠️ OAuth warmup failed (will retry on first request):', error);
+    }
+  }
 
   const rateLimit = authManager.getRateLimit();
   const cacheTTL = authManager.getCacheTTL();
@@ -52,24 +65,24 @@ export async function createMCPServer() {
     defaultTTL: disableCache ? 0 : cacheTTL,
     maxSize: disableCache ? 0 : 50 * 1024 * 1024, // 50MB or 0 if disabled
   });
-  
+
   // Create rate limiter
   const rateLimiter = new RateLimiter({
     limit: rateLimit,
     window: 60000, // 1 minute
     name: 'Reddit API',
   });
-  
+
   // Create Reddit API client
   const redditAPI = new RedditAPI({
     authManager,
     rateLimiter,
     cacheManager,
   });
-  
+
   // Create tools instance
   const tools = new RedditTools(redditAPI);
-  
+
   // Create MCP server
   const server = new Server(
     {
@@ -100,7 +113,7 @@ Rate limits: ${rateLimit} requests/minute. Cache TTL: ${cacheTTL / 60000} minute
       },
     }
   );
-  
+
   // Generate tool definitions from Zod schemas
   const toolDefinitions: Tool[] = [
     {
@@ -134,7 +147,7 @@ Rate limits: ${rateLimit} requests/minute. Cache TTL: ${cacheTTL / 60000} minute
       readOnlyHint: true
     }
   ];
-  
+
   // Store handlers for HTTP access
   const handlers = {
     'tools/list': async () => ({
@@ -142,10 +155,10 @@ Rate limits: ${rateLimit} requests/minute. Cache TTL: ${cacheTTL / 60000} minute
     }),
     'tools/call': async (params: any) => {
       const { name, arguments: args } = params;
-    
+
     try {
       let result: any;
-      
+
       // Validate and parse arguments based on tool
       switch (name) {
         case 'browse_subreddit':
@@ -176,7 +189,7 @@ Rate limits: ${rateLimit} requests/minute. Cache TTL: ${cacheTTL / 60000} minute
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
-      
+
       return {
         content: [
           {
@@ -198,13 +211,13 @@ Rate limits: ${rateLimit} requests/minute. Cache TTL: ${cacheTTL / 60000} minute
     }
     }
   };
-  
+
   // Register handlers with the MCP server
   server.setRequestHandler(ListToolsRequestSchema, handlers['tools/list']);
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return handlers['tools/call'](request.params);
   });
-  
+
   return { server, cacheManager, tools, handlers };
 }
 
@@ -213,19 +226,19 @@ Rate limits: ${rateLimit} requests/minute. Cache TTL: ${cacheTTL / 60000} minute
  */
 export async function startStdioServer() {
   const { server, cacheManager } = await createMCPServer();
-  
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  
+
   console.error('✅ Reddit MCP Buddy Server running (stdio mode)');
   console.error('💡 Reading from stdin, writing to stdout');
-  
+
   // Cleanup on exit
   process.on('SIGINT', () => {
     cacheManager.destroy();
     process.exit(0);
   });
-  
+
   process.on('SIGTERM', () => {
     cacheManager.destroy();
     process.exit(0);
@@ -237,16 +250,16 @@ export async function startStdioServer() {
  */
 export async function startHttpServer(port: number = 3000) {
   const { server, cacheManager } = await createMCPServer();
-  
+
   // Create transport - stateless mode for simpler setup
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // Stateless mode - no session management
     enableJsonResponse: false // Use SSE for notifications
   });
-  
+
   // Connect MCP server to transport
   await server.connect(transport);
-  
+
   // Create HTTP server
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     // Enable CORS
@@ -254,14 +267,14 @@ export async function startHttpServer(port: number = 3000) {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, MCP-Session-Id');
     res.setHeader('Access-Control-Expose-Headers', 'MCP-Session-Id');
-    
+
     // Handle OPTIONS for CORS preflight
     if (req.method === 'OPTIONS') {
       res.writeHead(200);
       res.end();
       return;
     }
-    
+
     // Handle health check
     if (req.url === '/health' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -279,14 +292,14 @@ export async function startHttpServer(port: number = 3000) {
       }));
       return;
     }
-    
+
     // Handle root endpoint
     if (req.url === '/' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('Reddit MCP Buddy Server (Streamable HTTP)\n');
       return;
     }
-    
+
     // Handle MCP endpoint - delegate to transport
     if (req.url === '/mcp') {
       // Parse body for POST requests
@@ -317,12 +330,12 @@ export async function startHttpServer(port: number = 3000) {
       }
       return;
     }
-    
+
     // 404 for other endpoints
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found\n');
   });
-  
+
   // Start listening
   httpServer.listen(port, () => {
     console.error(`✅ Reddit MCP Buddy Server running (Streamable HTTP)`);
@@ -331,14 +344,14 @@ export async function startHttpServer(port: number = 3000) {
     console.error(`🔌 Connect with Postman MCP client`);
     console.error('💡 Tip: Run "reddit-mcp-buddy --auth" for 10x more requests\n');
   });
-  
+
   // Cleanup on exit
   const cleanup = () => {
     cacheManager.destroy();
     httpServer.close();
     process.exit(0);
   };
-  
+
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
 }
