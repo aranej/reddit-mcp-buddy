@@ -5,7 +5,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CacheManager } from './core/cache.js';
 import { RedditTools } from './tools/index.js';
 export declare const SERVER_NAME = "reddit-mcp-buddy";
-export declare const SERVER_VERSION = "1.1.10";
+export declare const SERVER_VERSION = "1.3.1";
 /**
  * Create MCP server with proper protocol implementation
  */
