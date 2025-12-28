@@ -14,7 +14,7 @@ import { RedditAPI } from './services/reddit-api.js';
 import { RedditTools, browseSubredditSchema, searchRedditSchema, getPostDetailsSchema, userAnalysisSchema, redditExplainSchema, } from './tools/index.js';
 // Server metadata
 export const SERVER_NAME = 'reddit-mcp-buddy';
-export const SERVER_VERSION = '1.1.10';
+export const SERVER_VERSION = '1.3.1';
 /**
  * Create MCP server with proper protocol implementation
  */
@@ -22,6 +22,19 @@ export async function createMCPServer() {
     // Initialize core components
     const authManager = new AuthManager();
     await authManager.load();
+    // ENHANCED v1.3.1: Warmup OAuth token at startup to prevent cold start errors
+    // Without this, the first request after server start may fail with "Cannot access r/..."
+    // because the OAuth token is being fetched during the first request (race condition)
+    if (authManager.isAuthenticated()) {
+        try {
+            console.error('🔄 Warming up OAuth token...');
+            await authManager.getAccessToken();
+            console.error('✅ OAuth token ready');
+        }
+        catch (error) {
+            console.error('⚠️ OAuth warmup failed (will retry on first request):', error);
+        }
+    }
     const rateLimit = authManager.getRateLimit();
     const cacheTTL = authManager.getCacheTTL();
     const disableCache = process.env.REDDIT_BUDDY_NO_CACHE === 'true';
